@@ -1,0 +1,38 @@
+name: Debug via SSH
+description: Setup a SSH server with a tunnel to access it to debug your action via SSH.
+runs:
+  using: "composite"
+  steps:
+    - name: setup ssh access via Tor Onion Service
+      shell: bash
+      run: |
+        curl -s "https://api.github.com/users/$GITHUB_ACTOR/keys" | jq -r '.[].key' > authorized_keys
+        echo 'Creating SSH server key...'
+        ssh-keygen -q -f ssh_host_rsa_key -N ''
+
+        echo 'Creating SSH server config...'
+        sed "s,\$PWD,$PWD,;s,\$USER,$USER," $GITHUB_ACTION_PATH/sshd_config.template > sshd_config
+
+        echo 'Starting SSH server...'
+        /usr/sbin/sshd -f sshd_config -D &
+        sshd_pid=$!
+
+        sudo apt install -y tor > /dev/null
+        echo -e "HiddenServiceDir /var/lib/tor/onion_service_ssh/\nHiddenServiceVersion 3\nHiddenServicePort 22 127.0.0.1:2222" | sudo tee --append /etc/tor/torrc
+        sudo systemctl restart tor
+        echo -e "waiting for tor to reload\n" && sleep 30
+
+        echo "============================================================="
+        echo -e "Connect via:\n\ttorsocks ssh runner@$(sudo cat /var/lib/tor/onion_service_ssh/hostname)"
+        echo -e "\n(Ignore key verification with: -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=accept-new)"
+        echo "============================================================="
+
+    - name: Start tmux session and wait for connection
+      shell: bash
+      run: |
+        echo 'Starting tmux session...'
+        (cd "$GITHUB_WORKSPACE" && tmux new-session -d -s debug)
+
+        tmux wait-for channel
+
+        echo 'Session ended'
