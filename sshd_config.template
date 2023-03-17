@@ -1,4 +1,4 @@
-Port 2222
+Port 22
 HostKey $PWD/ssh_host_rsa_key
 PidFile $PWD/sshd.pid
 
